@@ -322,3 +322,23 @@ h1 {
     min-height: 300px;
   }
 }
+.map-wrapper {
+  overflow: hidden;
+  min-height: 380px;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+}
+
+.flood-map {
+  width: 100%;
+  height: 380px;
+}
+
+.leaflet-popup-content {
+  min-width: 180px;
+  line-height: 1.55;
+}
+
+.leaflet-popup-content strong {
+  color: #0f172a;
+}

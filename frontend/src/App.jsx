@@ -1,33 +1,66 @@
 import { useEffect, useState } from "react";
+import {
+  CircleMarker,
+  MapContainer,
+  Marker,
+  Popup,
+  TileLayer,
+} from "react-leaflet";
 import "./App.css";
 
 const API_URL = "http://127.0.0.1:8000/api/nowcast";
+const FORECAST_STEPS = [0, 60, 120, 180];
+const PUNE_CENTER = [18.5204, 73.8567];
+
+const riskColors = {
+  safe: "#22c55e",
+  moderate: "#eab308",
+  high: "#f97316",
+  severe: "#dc2626",
+};
+
+function drainPosition(index) {
+  const positions = [
+    [18.5202, 73.8561],
+    [18.5194, 73.8581],
+    [18.5216, 73.8550],
+  ];
+
+  return positions[index] ?? PUNE_CENTER;
+}
 
 function App() {
   const [nowcast, setNowcast] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-
+  const [selectedMinutes, setSelectedMinutes] = useState(0);
+  const [updating, setUpdating] = useState(false);
   useEffect(() => {
-    async function loadNowcast() {
-      try {
-        const response = await fetch(API_URL);
+  async function loadNowcast() {
+    try {
+      setUpdating(true);
 
-        if (!response.ok) {
-          throw new Error("Could not load flood nowcast data.");
-        }
+      const response = await fetch(
+        `${API_URL}?minutes=${selectedMinutes}`
+      );
 
-        const data = await response.json();
-        setNowcast(data);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
+      if (!response.ok) {
+        throw new Error("Could not load flood nowcast data.");
       }
-    }
 
-    loadNowcast();
-  }, []);
+      const data = await response.json();
+      setNowcast(data);
+      setError("");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+      setUpdating(false);
+    }
+  }
+
+  loadNowcast();
+}, [selectedMinutes]);
 
   if (loading) {
     return (
@@ -38,16 +71,16 @@ function App() {
   }
 
   if (error) {
-    return (
-      <main className="loading-screen error-screen">
-        <div>
-          <h1>Backend connection failed</h1>
-          <p>{error}</p>
-          <p>Ensure FastAPI is running at http://127.0.0.1:8000.</p>
-        </div>
-      </main>
-    );
-  }
+  return (
+    <main className="loading-screen error-screen">
+      <div>
+        <h1>Backend connection failed</h1>
+        <p>{error}</p>
+        <p>Ensure FastAPI is running at http://127.0.0.1:8000.</p>
+      </div>
+    </main>
+  );
+}
 
   const severeStreet = nowcast.streets.find(
     (street) => street.risk === "severe"
@@ -112,28 +145,74 @@ function App() {
               <h2>Flood Risk Map</h2>
               <p>Prototype area: {nowcast.location}</p>
             </div>
-            <button>+ 60 min forecast</button>
+            <button
+  type="button"
+  disabled={updating}
+  onClick={() => {
+    const currentIndex = FORECAST_STEPS.indexOf(selectedMinutes);
+    const nextIndex = (currentIndex + 1) % FORECAST_STEPS.length;
+    setSelectedMinutes(FORECAST_STEPS[nextIndex]);
+  }}
+>
+  {updating
+    ? "Updating..."
+    : selectedMinutes === 0
+      ? "+ 60 min forecast"
+      : `Forecast: +${selectedMinutes} min`}
+</button>
           </div>
 
-          <div className="map-placeholder">
-            <div className="road road-one"></div>
-            <div className="road road-two"></div>
+          <div className="map-wrapper">
+  <MapContainer
+    center={PUNE_CENTER}
+    zoom={15}
+    scrollWheelZoom={true}
+    className="flood-map"
+  >
+    <TileLayer
+      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+    />
 
-            <div className="water-zone zone-one">
-              {severeStreet?.water_depth_cm ?? 0} cm
-            </div>
+    {nowcast.streets.map((street) => (
+      <CircleMarker
+        key={street.id}
+        center={[street.latitude, street.longitude]}
+        radius={Math.max(10, street.water_depth_cm / 2)}
+        pathOptions={{
+          color: riskColors[street.risk] ?? "#2563eb",
+          fillColor: riskColors[street.risk] ?? "#2563eb",
+          fillOpacity: 0.7,
+          weight: 2,
+        }}
+      >
+        <Popup>
+          <strong>{street.name}</strong>
+          <br />
+          Predicted water depth: {street.water_depth_cm} cm
+          <br />
+          Risk level: {street.risk}
+          <br />
+          Route status: {street.status}
+        </Popup>
+      </CircleMarker>
+    ))}
 
-            <div className="water-zone zone-two">
-              {nowcast.streets[1]?.water_depth_cm ?? 0} cm
-            </div>
-
-            <div className="drain drain-one">{overflowDrain?.id ?? "D1"}</div>
-            <div className="drain drain-two">
-              {nearCapacityDrain?.id ?? "D2"}
-            </div>
-
-            <p>Interactive flood map will appear here</p>
-          </div>
+    {nowcast.drains.map((drain, index) => (
+      <Marker key={drain.id} position={drainPosition(index)}>
+        <Popup>
+          <strong>{drain.name}</strong>
+          <br />
+          Capacity used: {drain.capacity_percent}%
+          <br />
+          Blockage: {drain.blockage_percent}%
+          <br />
+          Status: {drain.status}
+        </Popup>
+      </Marker>
+    ))}
+  </MapContainer>
+</div>
 
           <div className="legend">
             <span><i className="safe"></i> Safe: 0–5 cm</span>
